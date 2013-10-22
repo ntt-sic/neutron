@@ -25,6 +25,7 @@ from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.v2 import attributes
 from neutron.api.v2 import resource as wsgi_resource
 from neutron.common import exceptions
+from neutron.openstack.common import idempotent
 from neutron.openstack.common import log as logging
 from neutron.openstack.common.notifier import api as notifier_api
 from neutron import policy
@@ -328,6 +329,8 @@ class Controller(object):
             # it is then deleted
             raise ex
 
+    @idempotent.idempotent
+    @idempotent.helper(substance="show", resolver="id")
     def create(self, request, body=None, **kwargs):
         """Creates a new instance of the requested entity."""
         parent_id = kwargs.get(self._parent_id_name)

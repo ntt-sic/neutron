@@ -205,6 +205,10 @@ class InvalidAllocationPool(BadRequest):
     message = _("The allocation pool %(pool)s is not valid.")
 
 
+class InvalidClientToken(BadRequest):
+    message = _("%(details)s")
+
+
 class OverlappingAllocationPools(Conflict):
     message = _("Found overlapping allocation pools:"
                 "%(pool_1)s %(pool_2)s for subnet %(subnet_cidr)s.")
