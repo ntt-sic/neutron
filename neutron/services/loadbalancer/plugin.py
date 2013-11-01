@@ -20,6 +20,7 @@ from neutron.common import exceptions as n_exc
 from neutron import context
 from neutron.db import api as qdbapi
 from neutron.db.loadbalancer import loadbalancer_db as ldb
+from neutron.db import routedserviceinsertion_db as rsi_db
 from neutron.db import servicetype_db as st_db
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants
@@ -31,7 +32,8 @@ LOG = logging.getLogger(__name__)
 
 
 class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
-                         agent_scheduler.LbaasAgentSchedulerDbMixin):
+                         agent_scheduler.LbaasAgentSchedulerDbMixin,
+                         rsi_db.RoutedServiceInsertionDbMixin):
     """Implementation of the Neutron Loadbalancer Service Plugin.
 
     This class manages the workflow of LBaaS request/response.
@@ -40,6 +42,7 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
     """
     supported_extension_aliases = ["lbaas",
                                    "lbaas_agent_scheduler",
+                                   "routed-service-insertion",
                                    "service-type"]
 
     # lbaas agent notifiers to handle agent update operations;
@@ -104,8 +107,15 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
         return "Neutron LoadBalancer Service Plugin"
 
     def create_vip(self, context, vip):
+        router_id = vip['vip'].get('router_id')
+        # TODO: validate router_id if required by the driver
         v = super(LoadBalancerPlugin, self).create_vip(context, vip)
         driver = self._get_driver_for_pool(context, v['pool_id'])
+        if router_id:
+            res = {'id': v['id'], 'router_id': router_id}
+            self._process_create_resource_router_id(context, res,
+                                                    ldb.Vip)
+            v['router_id'] = router_id
         driver.create_vip(context, v)
         return v
 
@@ -120,6 +130,8 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
 
     def _delete_db_vip(self, context, id):
         # proxy the call until plugin inherits from DBPlugin
+        self._delete_resource_router_id_binding(
+            context, id, ldb.Vip)
         super(LoadBalancerPlugin, self).delete_vip(context, id)
 
     def delete_vip(self, context, id):
@@ -142,9 +154,15 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
             return self.default_provider
 
     def create_pool(self, context, pool):
+        router_id = pool['pool'].get('router_id')
+        # TODO: validate router_id if required by the driver
         provider_name = self._get_provider_name(context, pool['pool'])
         p = super(LoadBalancerPlugin, self).create_pool(context, pool)
 
+        if router_id:
+            res = {'id': p['id'], 'router_id': router_id}
+            self._process_create_resource_router_id(context, res,
+                                                    ldb.Pool)
         self.service_type_manager.add_resource_association(
             context,
             constants.LOADBALANCER,
@@ -168,6 +186,8 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
     def _delete_db_pool(self, context, id):
         # proxy the call until plugin inherits from DBPlugin
         # rely on uuid uniqueness:
+        self._delete_resource_router_id_binding(
+            context, id, ldb.Pool)
         with context.session.begin(subtransactions=True):
             self.service_type_manager.del_resource_associations(context, [id])
             super(LoadBalancerPlugin, self).delete_pool(context, id)
