@@ -44,6 +44,7 @@ from neutron.openstack.common.rpc import proxy
 from neutron.openstack.common import service
 from neutron import service as neutron_service
 from neutron.services.firewall.agents.l3reference import firewall_l3_agent
+from neutron.services.loadbalancer.drivers import lbaas_l3_agent
 
 LOG = logging.getLogger(__name__)
 NS_PREFIX = 'qrouter-'
@@ -138,7 +139,8 @@ class RouterInfo(object):
         self._snat_action = None
 
 
-class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
+class L3NATAgent(lbaas_l3_agent.LBaaSL3AgentRpcCallback,
+                 firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
     """Manager for L3NatAgent
 
         API version history:
@@ -863,6 +865,7 @@ def main(manager='neutron.agent.l3_agent.L3NATAgentWithStateReport'):
     config.register_root_helper(conf)
     conf.register_opts(interface.OPTS)
     conf.register_opts(external_process.OPTS)
+    conf.register_opts(lbaas_l3_agent.OPTS)
     conf(project='neutron')
     config.setup_logging(conf)
     legacy.modernize_quantum_config(conf)
