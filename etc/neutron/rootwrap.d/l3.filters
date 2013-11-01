@@ -14,6 +14,7 @@ arping: CommandFilter, arping, root
 # l3_agent
 sysctl: CommandFilter, sysctl, root
 route: CommandFilter, route, root
+keepalived: CommandFilter, keepalived, root
 
 # metadata proxy
 metadata_proxy: CommandFilter, neutron-ns-metadata-proxy, root
