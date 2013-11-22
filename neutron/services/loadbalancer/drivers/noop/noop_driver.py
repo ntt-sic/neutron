@@ -61,6 +61,11 @@ class NoopLbaaSDriver(abstract_driver.LoadBalancerAbstractDriver):
         self.plugin._delete_db_pool(context, pool["id"])
 
     @log.log
+    def validate_pool(self, context, router_id,
+                      pool=None, pool_id=None, vip=None):
+        pass
+
+    @log.log
     def stats(self, context, pool_id):
         return {"bytes_in": 0,
                 "bytes_out": 0,

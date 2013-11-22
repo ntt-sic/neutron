@@ -81,6 +81,14 @@ class LoadBalancerAbstractDriver(object):
         pass
 
     @abc.abstractmethod
+    def validate_router_id(self, context, router_id,
+                           pool=None, pool_id=None, vip=None):
+        """A real driver would check router_id passed is legitimate.
+        Non routed-service-insertion type drivers would assert it to
+        be None."""
+        pass
+
+    @abc.abstractmethod
     def stats(self, context, pool_id):
         pass
 

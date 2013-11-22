@@ -315,6 +315,10 @@ class HaproxyOnHostPluginDriver(abstract_driver.LoadBalancerAbstractDriver):
                                         agent['agent']['host'])
         self.plugin._delete_db_pool(context, pool['id'])
 
+    def validate_router_id(self, context, router_id,
+                           pool=None, pool_id=None, vip=None):
+        pass
+
     def create_member(self, context, member):
         agent = self.get_pool_agent(context, member['pool_id'])
         self.agent_rpc.modify_pool(context, member['pool_id'], agent['host'])
