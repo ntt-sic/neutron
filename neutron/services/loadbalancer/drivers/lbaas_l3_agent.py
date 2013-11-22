@@ -45,10 +45,11 @@ class LBaaSL3AgentApi(proxy.RpcProxy):
         self.context = context
         self.host = host
 
-    def get_all_vips(self):
+    def get_router_pools(self, router_id):
         return self.call(
             self.context,
-            self.make_msg('get_all_vips', host=self.host),
+            self.make_msg('get_router_pools', router_id=router_id,
+                          host=self.host),
             topic=self.topic
         )
 
@@ -231,19 +232,23 @@ class LBaaSL3AgentRpcCallback(object):
 
         os.unlink(cfname)
 
-    def _reload_pool(self, context, pool_id=None, host=None):
+    def _reload_pool(self, pool_id=None, host=None):
         pool_info = self.lbaas_rpc.get_pool_info(pool_id)
         self.lb_state_cache[pool_id] = pool_info
-        routers = self.plugin_rpc.get_routers(
-            context, [pool_info['router_id']])
-        ri = neutron.agent.l3_agent.RouterInfo(pool_info['router_id'],
-                                               self.root_helper,
-                                               self.conf.use_namespaces,
-                                               routers[0])
+        ri = self.router_info[pool_info['router_id']]
         # TODO: support multiple vips per router
         
         # assign VIP IP
-        ifname = self.get_external_device_name(ri.router['gw_port_id'])
+        ifname = None
+        for p in ri.internal_ports:
+            if p['subnet_id'] == pool_info['vip']['subnet_id']:
+                ifname = self.get_external_device_name(p['id'])
+                break
+        if ifname is None and ri.router['gw_port']:
+            if ri.router['gw_port']['subnet_id'] == \
+               pool_info['vip']['subnet_id']:
+                ifname = self.get_external_device_name(ri.router['gw_port_id'])
+        
         device = ip_lib.IPDevice(ifname, self.root_helper,
                                  namespace=ri.ns_name())
         vip_cidr = pool_info['vip']['address'] + '/32'
@@ -254,9 +259,18 @@ class LBaaSL3AgentRpcCallback(object):
         changed = self.create_keepalived_conf(pool_id, pool_info)
         self.enable_keepalived(pool_id, ri.ns_name())
 
+    def process_router_add(self, ri):
+        LOG.debug(_("Lbaasl3agentrpccallback process_router_add for %s called")
+                  % ri.router['id'])
+        pools = self.lbaas_rpc.get_router_pools(ri.router['id'])
+        for p in pools:
+            _reload_pool(pool_id=p)
+
+        super(LBaaSL3AgentRpcCallback, self).process_router_add(ri)
+
     def reload_pool(self, context, pool_id=None, host=None):
         LOG.debug(_("reload_pool called"))
-        self._reload_pool(context, pool_id=pool_id, host=host)
+        self._reload_pool(pool_id=pool_id, host=host)
 
     def modify_pool(self, context, pool_id=None, host=None):
         LOG.debug(_("modify_pool called"))
