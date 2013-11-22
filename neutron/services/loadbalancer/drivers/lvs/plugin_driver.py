@@ -62,10 +62,11 @@ class LoadBalancerCallbacks(object):
         return q_rpc.PluginRpcDispatcher(
             [self, agents_db.AgentExtRpcCallback(self.plugin)])
 
-    def get_all_vips(self, context):
+    def get_router_pools(self, context, router_id, host=None):
         with context.session.begin(subtransactions=True):
-            qry = context.session.query(loadbalancer_db.Vip)
-            return [(v.id, v.pool_id) for v in qry.all()]
+            pools = self.plugin._get_resource_router_id_bindings(
+                context, loadbalancer_db.Pool, router_ids=[router_id])
+            return [p['resource_id'] for p in pools]
 
     def get_pool_info(self, context, pool_id, host=None):
         with context.session.begin(subtransactions=True):
@@ -79,7 +80,7 @@ class LoadBalancerCallbacks(object):
                 or pool.vip.status not in ACTIVE_PENDING):
                 raise Exception(_('Pool or vip has bad status'))
             router = self.plugin._get_resource_router_id_binding(
-                context, loadbalancer_db.Vip, pool.vip.id)
+                context, loadbalancer_db.Pool, pool_id)
             retval = {}
             retval['pool'] = self.plugin._make_pool_dict(pool)
             retval['vip'] = self.plugin._make_vip_dict(pool.vip)
@@ -185,6 +186,38 @@ class LVSOnHostPluginDriver(abstract_driver.LoadBalancerAbstractDriver):
             self.agent_rpc.destroy_pool(context, pool['id'],
                                         agent)
         self.plugin._delete_db_pool(context, pool['id'])
+
+    def validate_router_id(self, context, router_id, pool=None,
+                           pool_id=None, vip=None):
+        qry = context.session.query(l3_db.Router)
+        qry = qry.filter_by(id=router_id)
+        router = qry.one()
+
+        if pool:
+            if pool_id or vip:
+                raise Exception # XXX: wrong arg
+            interfaces = self.plugin.get_sync_interfaces(context, [router_id])
+            pool_or_vip_subnet = pool['pool']['subnet_id']
+        else:
+            if not vip:
+                raise Exception # XXX: wrong arg
+            binding = self.plugin._get_resource_router_id_binding(
+                context, loadbalancer_db.Pool, pool_id)
+            if binding['router_id'] != router_id:
+                raise Exception('router_id mismatch between pool and vip.')
+
+            for ip in router['gw_port']['fixed_ips']:
+                if vip['vip']['subnet_id'] == ip['subnet_id']:
+                    # found
+                    return
+            pool_or_vip_subnet = vip['vip']['subnet_id']
+
+        for i in interfaces:
+            if pool['pool']['subnet_id'] == i['subnet']['id']:
+                # found
+                return
+        if not found:
+            raise Exception('pool or vip does not belong to a valid subnet.')
 
     def create_member(self, context, member):
         agent = self.get_pool_agent(context, member['pool_id'])

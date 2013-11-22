@@ -109,14 +109,11 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
 
     def create_vip(self, context, vip):
         router_id = vip['vip'].get('router_id')
-        # TODO: validate router_id if required by the driver
+        pool_id = vip['vip'].get('pool_id')
+        driver = self._get_driver_for_pool(context, pool_id)
+        driver.validate_router_id(context, router_id, pool_id=pool_id, vip=vip)
         v = super(LoadBalancerPlugin, self).create_vip(context, vip)
-        driver = self._get_driver_for_pool(context, v['pool_id'])
-        if router_id:
-            res = {'id': v['id'], 'router_id': router_id}
-            self._process_create_resource_router_id(context, res,
-                                                    ldb.Vip)
-            v['router_id'] = router_id
+
         driver.create_vip(context, v)
         return v
 
@@ -124,15 +121,15 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
         if 'status' not in vip['vip']:
             vip['vip']['status'] = constants.PENDING_UPDATE
         old_vip = self.get_vip(context, id)
+        driver = self._get_driver_for_pool(context, vip['vip']['pool_id'])
+        driver.validate_router_id(context, router_id, pool_id=pool_id, vip=vip)
         v = super(LoadBalancerPlugin, self).update_vip(context, id, vip)
-        driver = self._get_driver_for_pool(context, v['pool_id'])
+
         driver.update_vip(context, old_vip, v)
         return v
 
     def _delete_db_vip(self, context, id):
         # proxy the call until plugin inherits from DBPlugin
-        self._delete_resource_router_id_binding(
-            context, id, ldb.Vip)
         super(LoadBalancerPlugin, self).delete_vip(context, id)
 
     def delete_vip(self, context, id):
@@ -156,8 +153,9 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
 
     def create_pool(self, context, pool):
         router_id = pool['pool'].get('router_id')
-        # TODO: validate router_id if required by the driver
         provider_name = self._get_provider_name(context, pool['pool'])
+        driver = self.drivers[provider_name]
+        driver.validate_router_id(context, router_id, pool=pool)
         p = super(LoadBalancerPlugin, self).create_pool(context, pool)
 
         if router_id:
@@ -171,7 +169,6 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
         #need to add provider name to pool dict,
         #because provider was not known to db plugin at pool creation
         p['provider'] = provider_name
-        driver = self.drivers[provider_name]
         driver.create_pool(context, p)
         return p
 

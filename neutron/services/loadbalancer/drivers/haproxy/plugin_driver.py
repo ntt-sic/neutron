@@ -399,6 +399,10 @@ class AgentBasedPluginDriver(abstract_driver.LoadBalancerAbstractDriver):
         if agent:
             self.agent_rpc.delete_pool(context, pool, agent['agent']['host'])
 
+    def validate_router_id(self, context, router_id,
+                           pool=None, pool_id=None, vip=None):
+        pass
+
     def create_member(self, context, member):
         agent = self.get_pool_agent(context, member['pool_id'])
         self.agent_rpc.create_member(context, member, agent['host'])
