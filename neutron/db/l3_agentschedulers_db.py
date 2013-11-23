@@ -126,7 +126,7 @@ class L3AgentSchedulerDbMixin(l3agentscheduler.L3AgentSchedulerPluginBase,
             return {'routers': []}
 
     def list_active_sync_routers_on_active_l3_agent(
-            self, context, host, router_ids):
+            self, context, host, router_ids, active=None):
         agent = self._get_agent_by_type_and_host(
             context, constants.AGENT_TYPE_L3, host)
         if not agent.admin_state_up:
@@ -143,7 +143,7 @@ class L3AgentSchedulerDbMixin(l3agentscheduler.L3AgentSchedulerPluginBase,
         router_ids = [item[0] for item in query]
         if router_ids:
             return self.get_sync_data(context, router_ids=router_ids,
-                                      active=True)
+                                      active=active)
         else:
             return []
 
