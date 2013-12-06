@@ -703,6 +703,7 @@ class L3NATAgent(lbaas_l3_agent.LBaaSL3AgentRpcCallback,
         for router_id in prev_router_ids - cur_router_ids:
             pool.spawn_n(self._router_removed, router_id)
         pool.waitall()
+        super(L3NATAgent, self)._process_routers(routers, all_routers)
 
     @lockutils.synchronized('l3-agent', 'neutron-')
     def _rpc_loop(self):

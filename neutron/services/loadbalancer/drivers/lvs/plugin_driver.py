@@ -15,7 +15,7 @@
 #    under the License.
 #
 # @author: Mark McClain, DreamHost
-# @author: IWAMOTO Toshihir, VA Linux Systems Japan
+# @author: IWAMOTO Toshihiro, VA Linux Systems Japan
 
 import uuid
 
@@ -26,6 +26,7 @@ from neutron.common import rpc as q_rpc
 from neutron.common import topics
 from neutron.db import agents_db
 from neutron.db import api as qdbapi
+from neutron.db import l3_db
 from neutron.db.loadbalancer import loadbalancer_db
 from neutron import manager
 from neutron.openstack.common import log as logging
@@ -34,7 +35,6 @@ from neutron.openstack.common import rpc
 from neutron.openstack.common.rpc import dispatcher
 from neutron.openstack.common.rpc import proxy
 from neutron.plugins.common import constants
-#from neutron.services.loadbalancer.drivers.haproxy.plugin_driver import LoadBalancerCallbacks as LoadBalancerCallbacks_base
 from neutron.services.loadbalancer.drivers.haproxy.plugin_driver import LoadBalancerAgentApi
 from neutron.services.loadbalancer.drivers import abstract_driver
 
@@ -74,11 +74,11 @@ class LoadBalancerCallbacks(object):
             qry = qry.filter_by(id=pool_id)
             pool = qry.one()
 
-            if not pool.vip:
-                raise Exception(_('Pool has no vip'))
-            if (pool.status not in ACTIVE_PENDING
-                or pool.vip.status not in ACTIVE_PENDING):
-                raise Exception(_('Pool or vip has bad status'))
+            if pool.status not in ACTIVE_PENDING:
+                return {}
+            if not pool.vip or \
+               pool.vip.status not in ACTIVE_PENDING:
+                return {}
             router = self.plugin._get_resource_router_id_binding(
                 context, loadbalancer_db.Pool, pool_id)
             retval = {}
@@ -196,7 +196,9 @@ class LVSOnHostPluginDriver(abstract_driver.LoadBalancerAbstractDriver):
         if pool:
             if pool_id or vip:
                 raise Exception # XXX: wrong arg
-            interfaces = self.plugin.get_sync_interfaces(context, [router_id])
+            plugin = manager.NeutronManager.get_service_plugins().get(
+                constants.L3_ROUTER_NAT)
+            interfaces = plugin.get_sync_interfaces(context, [router_id])
             pool_or_vip_subnet = pool['pool']['subnet_id']
         else:
             if not vip:

@@ -15,6 +15,7 @@ arping: CommandFilter, arping, root
 sysctl: CommandFilter, sysctl, root
 route: CommandFilter, route, root
 keepalived: CommandFilter, keepalived, root
+kill-keepalived: KillFilter, root, /usr/sbin/keepalived, -HUP, -15
 
 # metadata proxy
 metadata_proxy: CommandFilter, neutron-ns-metadata-proxy, root
