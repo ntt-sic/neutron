@@ -89,17 +89,16 @@ class LoadBalancerCallbacks(object):
                 for m in pool.members if m.status in ACTIVE_PENDING
             ]
             retval['healthmonitors'] = [
-                self.plugin._make_health_monitor_dict(hm.monitor)
+                self.plugin._make_health_monitor_dict(hm.healthmonitor)
                 for hm in pool.monitors
-                if (hm.monitor.status == constants.ACTIVE and
-                    hm.monitor.admin_state_up)
+                if hm.status in ACTIVE_PENDING
             ]
 
             if router:
                 retval['router_id'] = router['router_id']
             return retval
 
-    def set_pool_status(self, context, pool_id, activate=True):
+    def set_pool_status(self, context, pool_id, activate=True, host=None):
         with context.session.begin(subtransactions=True):
             qry = context.session.query(loadbalancer_db.Pool)
             qry = qry.filter_by(id=pool_id)
@@ -119,6 +118,17 @@ class LoadBalancerCallbacks(object):
             for m in pool.members:
                 if m.status in ACTIVE_PENDING:
                     m.status = set_status
+
+    def set_member_status(self, context, member_id, activate=True, host=None):
+        with context.session.begin(subtransactions=True):
+            qry = context.session.query(loadbalancer_db.Member)
+            qry = qry.filter_by(id=member_id)
+            m = qry.one()
+
+            if activate:
+                m.status = constants.ACTIVE
+            else:
+                m.status = constants.INACTIVE
 
 
 class LVSOnHostPluginDriver(abstract_driver.LoadBalancerAbstractDriver):
