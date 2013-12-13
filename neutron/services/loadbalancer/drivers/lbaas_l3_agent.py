@@ -18,6 +18,7 @@
 # @author: IWAMOTO Toshihiro, VA Linux Systems Japan
 
 from oslo.config import cfg
+import eventlet
 import netaddr
 
 import neutron.agent.l3_agent
@@ -25,8 +26,12 @@ from neutron.agent.linux import ip_lib
 from neutron.agent.linux import utils
 from neutron import context
 from neutron.openstack.common import log as logging
+from neutron.openstack.common import uuidutils
 from neutron.openstack.common.rpc import proxy
+from neutron.services.loadbalancer import constants
 import os
+import socket
+import sys
 
 LOG = logging.getLogger(__name__)
 
@@ -34,6 +39,9 @@ OPTS = [
     cfg.StrOpt('loadbalancer_confs',
                default='$state_path/lb',
                help=_('Location to store loadbalancer config files')),
+    cfg.StrOpt('lb_status_relay_socket',
+               default='$state_path/lb_relay/socket',
+               help=_('Location of LB status relay UNIX domain socket')),
 ]
 
 class LBaaSL3AgentApi(proxy.RpcProxy):
@@ -68,6 +76,14 @@ class LBaaSL3AgentApi(proxy.RpcProxy):
             topic=self.topic
         )
 
+    def set_member_status(self, member_id, activate=True):
+        return self.call(
+            self.context,
+            self.make_msg('set_member_status', member_id=member_id,
+                          activate=activate, host=self.host),
+            topic=self.topic
+        )
+
 
 class LBaaSL3AgentRpcCallback(object):
 
@@ -88,6 +104,8 @@ class LBaaSL3AgentRpcCallback(object):
 
         super(LBaaSL3AgentRpcCallback, self).__init__(conf=conf)
 
+        self.status_relay = LBMemberStatusRelay(conf, self.member_status_update)
+
     def _get_value_from_conf_file(self, file, converter=None):                  
         """A helper function to read a value from one of the state files."""    
         msg = _('Error while reading %s')
@@ -104,6 +122,14 @@ class LBaaSL3AgentRpcCallback(object):
         LOG.debug(msg % file)
         return None
                                                                                 
+    def _member_status_script_path(self):
+        return os.path.join(os.path.dirname(sys.argv[0]),
+                            'neutron-lb-member-status-update')
+
+    def member_status_update(self, member, updown):
+        self.lbaas_rpc.set_member_status(member,
+                                         updown == 'up')
+
     def is_keepalived_alive(self, pid):
         try:
             with open('/proc/%d/cmdline' % pid, 'r') as f:
@@ -116,6 +142,27 @@ class LBaaSL3AgentRpcCallback(object):
             LOG.debug(_("Unexpected error in is_keepalived_alive: ") +
                       str(sys.exc_info()))
         return False
+
+    def get_monitor_str_http(self, h, member):
+        if h['type'] == constants.HEALTH_MONITOR_HTTP:
+            buf = '\tHTTP'
+        else:
+            buf = '\tSSL'
+        buf += "_GET\n\t{\n\t    url {\n\t\tpath %s\n" % h['url_path']
+        buf += "\t\tstatus_code %s\n\t    }\n" % h['expected_codes']
+        buf += "\t    connect_port %d\n\t    bindto %s\n" % (
+            member['protocol_port'], member['address'])
+        buf += "\t    connect_timeout %s\n" % h['timeout']
+        buf += "\t    nb_get_retry %s\n" % h['max_retries']
+        buf += "\t    delay_before_retry %s\n\t}\n" % h['delay']
+        return buf
+
+    def get_monitor_str_tcp(self, h, member):
+        buf = "\tTCP_CHECK\n\t{\n"
+        buf += "\t    connect_port %d\n\t    bindto %s\n" % (
+            member['protocol_port'], member['address'])
+        buf += "\t    connect_timeout %s\n\t}\n" % h['timeout']
+        return buf
 
     def create_keepalived_conf(self, pool_id, pool_info):
         """Create a keepalived.conf.
@@ -131,10 +178,11 @@ class LBaaSL3AgentRpcCallback(object):
         if len(pool_info['healthmonitors']):
             buf += "delay_loop %d\n" % \
                    min(map(lambda x: x['delay'],
-                           pool_info['health_monitors']))
+                           pool_info['healthmonitors']))
 
-        lb_algo_map = {'ROUND_ROBIN': 'wrr',
-                       'LEAST_CONNECTIONS': 'wlc'}
+        lb_algo_map = {constants.LB_METHOD_ROUND_ROBIN: 'wrr',
+                       constants.LB_METHOD_LEAST_CONNECTIONS: 'wlc',
+                       constants.LB_METHOD_SOURCE_IP: 'sh'}
         buf += "lb_algo %s\nlb_kind NAT\n" % \
                   lb_algo_map[pool_info['pool']['lb_method']]
         buf += "protocol %s\n" % pool_info['pool']['protocol']
@@ -149,27 +197,18 @@ class LBaaSL3AgentRpcCallback(object):
             buf += "\tinhibit_on_failure\n"
             if vip['connection_limit'] > 0:
                 buf += "\tuthreshold %d\n" % m['connection_limit']
-            # TODO: add notify_{up,down}
+            for s in ['up', 'down']:
+                buf += ("\tnotify_%s \"%s %s %s %s\"\n" %
+                        (s,
+                         self._member_status_script_path(),
+                         self.conf.lb_status_relay_socket,
+                         m['id'], s))
             for h in pool_info['healthmonitors']:
-                buf += "\tMISC_CHECK\n\t{\n\t    misc_path \""
-                if h['type'] == 'TCP':
-                    buf += self.conf.script_check_tcp
-                elif h['type'] == 'PING':
-                    buf += self.conf.script_check_ping
-                else:
-                    LOG.error("Invalid health monitor type '%s'" %
-                              h['type'])
-                    raise ValueError(h['type'])
-                buf += " %d %d %s" % \
-                          (h['timeout'], h['max_retries'], m['address'])
-                if h['type'] == 'TCP':
-                    addr = pool_info['vip']['rip_address']
-                    buf += " %d %s\"\n" % (m['protocol_port'], addr)
-
-                else:
-                    buf += " \"\n"
-                buf += "\t    misc_timeout %d\n\t}\n" % \
-                          (h['timeout'] * (h['max_retries'] + 1))
+                if h['type'] in (constants.HEALTH_MONITOR_HTTP,
+                                 constants.HEALTH_MONITOR_HTTPS):
+                    buf += self.get_monitor_str_http(h, m)
+                elif h['type'] == constants.HEALTH_MONITOR_TCP:
+                    buf += self.get_monitor_str_tcp(h, m)
             buf += "    }\n"
         buf += "}\n"
         try:
@@ -301,3 +340,46 @@ class LBaaSL3AgentRpcCallback(object):
         net = netaddr.IPNetwork(vip_cidr)
         device.addr.delete(net.version, vip_cidr)
         del self.lb_state_cache[pool_id]
+
+
+class LBMemberStatusRelay(object):
+    """UNIX domain socket server for processing member status updates.
+    """
+
+    def __init__(self, conf, status_update_callback):
+        self.callback = status_update_callback
+
+        try:
+            os.unlink(conf.lb_status_relay_socket)
+        except OSError:
+            if os.path.exists(conf.lb_status_relay_socket):
+                raise
+
+        dir = os.path.dirname(conf.lb_status_relay_socket)
+        try:
+            os.rmdir(dir)
+        except OSError:
+            if os.path.exists(dir):
+                raise
+        os.mkdir(dir, 0o700)
+        listener = eventlet.listen(conf.lb_status_relay_socket,
+                                   family=socket.AF_UNIX)
+        eventlet.spawn(eventlet.serve, listener, self._handler)
+
+    def _handler(self, client_sock, client_addr):
+        """Handle incoming lease relay stream connection.
+
+        This method will only read the first 1024 bytes and then close the
+        connection.  The limit exists to limit the impact of misbehaving
+        clients.
+        """
+        try:
+            msg = client_sock.recv(1024)
+            client_sock.close()
+            data = msg.strip().split(' ')
+            if len(data) != 2 or not uuidutils.is_uuid_like(data[0]):
+                LOG.warn(_('Wrong LB status msg %s') % repr(msg))
+                return
+            self.callback(data[0], data[1])
+        except Exception:
+            LOG.exception(_('Error updating LB status'))
