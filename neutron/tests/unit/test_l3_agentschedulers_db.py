@@ -22,6 +22,11 @@ class TestL3AgentSchedulerDbMixin(base.BaseTestCase):
 
     def setUp(self):
         super(TestL3AgentSchedulerDbMixin, self).setUp()
+        self.agentscheduler = l3_agentschedulers_db.L3AgentSchedulerDbMixin()
+
+    def tearDown(self):
+        super(TestL3AgentSchedulerDbMixin, self).tearDown()
 
     def test_list_active_sync_routers_on_active_l3_agent(self):
         
+        self.agentscheduler.list_active_sync_routers_on_active_l3_agent(mock.Mock(), active=True)
