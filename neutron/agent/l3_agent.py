@@ -139,7 +139,7 @@ class RouterInfo(object):
         self._snat_action = None
 
 
-class L3NATAgent(lbaas_l3_agent.LBaaSL3AgentRpcCallback,
+class L3NATAgent(lbaas_l3_agent.LBaaSL3Agent,
                  firewall_l3_agent.FWaaSL3AgentRpcCallback, manager.Manager):
     """Manager for L3NatAgent
 
