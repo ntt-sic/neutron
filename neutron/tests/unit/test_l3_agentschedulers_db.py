@@ -17,8 +17,12 @@ import mock
 
 from neutron.db import l3_agentschedulers_db
 from neutron.tests import base
+from neutron.openstack.common import uuidutils
+from neutron.tests.unit import test_l3_plugin
 
-class TestL3AgentSchedulerDbMixin(base.BaseTestCase):
+_uuid = uuidutils.generate_uuid
+
+class TestL3AgentSchedulerDbMixin(base.BaseTestCase, test_l3_plugin.L3NatTestCaseMixin):
 
     def setUp(self):
         super(TestL3AgentSchedulerDbMixin, self).setUp()
@@ -29,4 +33,7 @@ class TestL3AgentSchedulerDbMixin(base.BaseTestCase):
 
     def test_list_active_sync_routers_on_active_l3_agent(self):
         
-        self.agentscheduler.list_active_sync_routers_on_active_l3_agent(mock.Mock(), active=True)
+        router_ids = [_uuid()]
+        routers = self.agentscheduler.list_active_sync_routers_on_active_l3_agent(mock.Mock(), router_ids, active=True)
+        if r in routers:
+            self.assertEqual(r['router']['id'], router_ids)
