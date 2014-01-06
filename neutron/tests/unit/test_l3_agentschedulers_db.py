@@ -20,10 +20,14 @@ from neutron.db import l3_agentschedulers_db
 from neutron.tests import base
 from neutron.openstack.common import uuidutils
 from neutron.tests.unit import test_l3_plugin
+from neutron.tests.unit import test_db_plugin
+from neutron.tests.unit import test_agent_ext_plugin
 
 _uuid = uuidutils.generate_uuid
 
-class TestL3AgentSchedulerDbMixin(base.BaseTestCase, test_l3_plugin.L3NatTestCaseMixin):
+class TestL3AgentSchedulerDbMixin(test_l3_plugin.L3NatTestCaseMixin,
+                                  test_agent_ext_plugin.AgentDBTestMixIn,
+                                  test_db_plugin.NeutronDbPluginV2TestCase):
 
     def setUp(self):
         super(TestL3AgentSchedulerDbMixin, self).setUp()
@@ -33,6 +37,7 @@ class TestL3AgentSchedulerDbMixin(base.BaseTestCase, test_l3_plugin.L3NatTestCas
         super(TestL3AgentSchedulerDbMixin, self).tearDown()
 
     def test_list_active_sync_routers_on_active_l3_agent(self):
+        self.fmt = 'json'
         with contextlib.nested(self.router(), self.router()) as routers:
             router_ids = [r['router']['id'] for r in routers]
             ret_a = self.agentscheduler.list_active_sync_routers_on_active_l3_agent(
