@@ -748,10 +748,11 @@ class OvsAgentSchedulerTestCase(OvsAgentSchedulerTestCaseBase):
             self.assertIn(router_ids[0], [r['id'] for r in ret_a])
             self.assertIn(router_ids[2], [r['id'] for r in ret_a])
 
+        # Get routers (admin_state_up True and False)
         with contextlib.nested(self.router(admin_state_up=True),
                                self.router(admin_state_up=False)) as routers:
             router_ids = [r['router']['id'] for r in routers]
-            
+
             #GET all routers
             ret_a = l3_rpc.sync_routers(self.adminContext, host=L3_HOSTA)
             self.assertEqual(set(router_ids), set([r['id'] for r in ret_a]))
