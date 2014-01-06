@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import contextlib
 import mock
 
 from neutron.db import l3_agentschedulers_db
@@ -32,8 +33,15 @@ class TestL3AgentSchedulerDbMixin(base.BaseTestCase, test_l3_plugin.L3NatTestCas
         super(TestL3AgentSchedulerDbMixin, self).tearDown()
 
     def test_list_active_sync_routers_on_active_l3_agent(self):
-        
+        with contextlib.nested(self.router(), self.router()) as routers:
+            router_ids = [r['router']['id'] for r in routers]
+            ret_a = self.agentscheduler.list_active_sync_routers_on_active_l3_agent(
+                mock.Mock(), router_ids, active=True)
+            self.assertEqual(set(router_ids), set([r['id'] for r in ret_a]))
+        """    
         router_ids = [_uuid()]
-        routers = self.agentscheduler.list_active_sync_routers_on_active_l3_agent(mock.Mock(), router_ids, active=True)
+        routers = self.agentscheduler.list_active_sync_routers_on_active_l3_agent(
+                mock.Mock(), router_ids, active=True)
         if r in routers:
             self.assertEqual(r['router']['id'], router_ids)
+        """
