@@ -28,6 +28,8 @@ from neutron import context
 from neutron.db import agents_db
 from neutron.db import dhcp_rpc_base
 from neutron.db import l3_rpc_base
+from neutron.db import l3_agentschedulers_db
+from neutron.db.agentschedulers_db import AgentSchedulerDbMixin
 from neutron.extensions import agent
 from neutron.extensions import dhcpagentscheduler
 from neutron.extensions import l3agentscheduler
@@ -990,6 +992,56 @@ class OvsAgentSchedulerTestCase(OvsAgentSchedulerTestCaseBase):
                 expected_code=exc.HTTPForbidden.code,
                 admin_context=False)
 
+    def test_list_active_sync_routers_on_active_l3_agent(self):
+        self.agentscheduler = l3_agentschedulers_db.L3AgentSchedulerDbMixin()
+        plugin = manager.NeutronManager.get_plugin()
+        l3_hosta = {
+            'binary': 'neutron-l3-agent',
+            'host': L3_HOSTA,
+            'topic': 'L3_AGENT',
+            'configurations': {'use_namespaces': False,
+                               'router_id': None,
+                               'handle_internal_only_routers':
+                               True,
+                               'gateway_external_network_id':
+                               None,
+                               'interface_driver': 'interface_driver',
+                               },
+            'agent_type': constants.AGENT_TYPE_L3}
+        self._register_one_agent_state(l3_hosta)
+        #self._register_agent_states()
+        with contextlib.nested(self.router(), self.router()) as routers:
+            
+            #ret_a = l3_rpc.sync_routers(self.adminContext, host=L3_HOSTA)
+            router_ids = [r['router']['id'] for r in routers]
+
+            """
+            ret_a = self.agentscheduler.list_active_sync_routers_on_active_l3_agent(
+                self.adminContext, host=L3_HOSTA, router_ids=router_ids, active=None)
+            self.assertEqual(set(router_ids), set([r['id'] for r in ret_a]))
+            """
+
+            """
+            plugin = manager.NeutronManager.get_plugin()
+            agent = {'host': L3_HOSTA,
+                     'agent_type': constants.AGENT_TYPE_L3,
+                     'binary': 'fake-binary',
+                     'topic': 'fake-topic'}
+            plugin.create_or_update_agent(self.adminContext, agent)
+            for router_id in router_ids:
+                plugin.schedule_router(self.adminContext, router_id)
+            """
+
+            #self.l3agentscheduler_dbMinxin.auto_schedule_routers(self.adminContext, host=L3_HOSTA, router_ids=router_ids)
+
+            """
+            _get_agent_by_type_adn_host = 'neutron.db.agents_db.AgentDbMixin._get_agent_by_type_and_host'
+            with mock.patch(_get_agent_by_type_adn_host) as mock_get_agent_by_type_adn_host:
+                mock_get_agent_by_type_adn_host.return_value = plugin.get_agents_db(self.adminContext)
+                ret_a = self.agentscheduler.list_active_sync_routers_on_active_l3_agent(
+                    self.adminContext, host=L3_HOSTA, router_ids=router_ids, active=None)
+                self.assertEqual(set(router_ids), set([r['id'] for r in ret_a]))
+             """
 
 class OvsDhcpAgentNotifierTestCase(test_l3_plugin.L3NatTestCaseMixin,
                                    test_agent_ext_plugin.AgentDBTestMixIn,
